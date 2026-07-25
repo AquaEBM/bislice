@@ -68,14 +68,14 @@ impl<'a, T> From<&'a mut [T]> for BiSlice<'a, T> {
     }
 }
 
-impl<'a, T> From<(&'a [T], )> for BiSlice<'a, T> {
-    fn from((value, ): (&'a [T], )) -> Self {
+impl<'a, T> From<(&'a [T],)> for BiSlice<'a, T> {
+    fn from((value,): (&'a [T],)) -> Self {
         Self::from_single(value)
     }
 }
 
-impl<'a, T> From<(&'a mut [T], )> for BiSlice<'a, T> {
-    fn from((value, ): (&'a mut [T], )) -> Self {
+impl<'a, T> From<(&'a mut [T],)> for BiSlice<'a, T> {
+    fn from((value,): (&'a mut [T],)) -> Self {
         Self::from_single(value)
     }
 }
@@ -265,5 +265,46 @@ impl<T> ops::Index<usize> for BiSlice<'_, T> {
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         self.get(index).expect("index out of bounds")
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::io::Read for BiSlice<'_, u8> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let amt = buf.len().min(self.len());
+        let (a, b) = self.split_at(amt).unwrap();
+
+        BiSliceMut::from_single(&mut buf[..amt])
+            .copy_from_slice(a)
+            .unwrap();
+
+        *self = b;
+        Ok(amt)
+    }
+
+    fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {
+        let mut nread = 0usize;
+        for buf in bufs {
+            nread = nread.strict_add(self.read(buf)?);
+            if self.is_empty() {
+                break;
+            }
+        }
+
+        Ok(nread)
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        let len = self.len();
+        buf.try_reserve(len)?;
+        let (start, end) = self.into_slices();
+        buf.extend_from_slice(start);
+        buf.extend_from_slice(end);
+        *self = self.slice(len..).unwrap();
+        Ok(len)
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+        (self.read(buf)? >= self.len()).ok_or_else(|| std::io::ErrorKind::UnexpectedEof.into())
     }
 }

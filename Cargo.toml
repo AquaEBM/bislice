@@ -2,3 +2,13 @@
 name = "bislice"
 version = "0.1.0"
 edition = "2024"
+description = "Utility crate that allows using two non-contiguous slice as if they were one contiguous slice, by mimicking Rust's native slice API"
+license = "MIT"
+repository = "https://github.com/AquaEBM/bislice"
+keywords = ["utility", "slice", "ring_buffer", "io"]
+categories = ["memory-management", "multimedia::audio", "no_std::no_alloc", "data-structures", "embedded"]
+
+[features]
+
+default = ["std"]
+std = []

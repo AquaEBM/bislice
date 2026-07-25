@@ -52,14 +52,14 @@ impl<'a, T> From<&'a mut [T]> for BiSliceMut<'a, T> {
     }
 }
 
-impl<'a, T> From<(&'a mut [T], )> for BiSliceMut<'a, T> {
-    fn from((value, ): (&'a mut [T], )) -> Self {
+impl<'a, T> From<(&'a mut [T],)> for BiSliceMut<'a, T> {
+    fn from((value,): (&'a mut [T],)) -> Self {
         Self::from_single(value)
     }
 }
 
-impl<'a, T> From<[&'a mut [T] ; 1]> for BiSliceMut<'a, T> {
-    fn from([value]: [&'a mut [T] ; 1]) -> Self {
+impl<'a, T> From<[&'a mut [T]; 1]> for BiSliceMut<'a, T> {
+    fn from([value]: [&'a mut [T]; 1]) -> Self {
         Self::from_single(value)
     }
 }
@@ -187,73 +187,29 @@ impl<'a, T> BiSliceMut<'a, T> {
     #[inline]
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn copy_from_slice(self, source: BiSlice<'_, T>) -> Option<()>
+    pub fn copy_from_slice(self, slice: BiSlice<'_, T>) -> Option<()>
     where
         T: Copy,
     {
-        if self.reborrow().len() != source.len() {
-            return None;
-        }
-
-        let (src_start, src_end) = source.into_slices();
-        let (dest_start, dest_end) = self.into_mut_slices();
-
-        let src_split = src_start.len();
-        let dest_split = dest_start.len();
-
-        let mid_len = dest_split.abs_diff(src_split);
-
-        if src_split >= dest_split {
-            let (src_start, src_mid) = src_start.split_at_checked(dest_split).unwrap();
-            let (dest_mid, dest_end) = dest_end.split_at_mut_checked(mid_len).unwrap();
-            dest_start.copy_from_slice(src_start);
-            dest_mid.copy_from_slice(src_mid);
-            dest_end.copy_from_slice(src_end);
-        } else {
-            let (src_mid, src_end) = src_end.split_at_checked(mid_len).unwrap();
-            let (dest_start, dest_mid) = dest_start.split_at_mut_checked(src_split).unwrap();
-            dest_start.copy_from_slice(src_start);
-            dest_mid.copy_from_slice(src_mid);
-            dest_end.copy_from_slice(src_end);
-        }
-
-        Some(())
+        aligned_portions(self, slice).map(|parts| {
+            for (dest, src) in parts {
+                dest.copy_from_slice(src);
+            }
+        })
     }
 
     #[inline]
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn clone_from_slice(self, source: BiSlice<'_, T>) -> Option<()>
+    pub fn clone_from_slice(self, slice: BiSlice<'_, T>) -> Option<()>
     where
         T: Clone,
     {
-        if self.reborrow().len() != source.len() {
-            return None;
-        }
-
-        let (src_start, src_end) = source.into_slices();
-        let (dest_start, dest_end) = self.into_mut_slices();
-
-        let src_split = src_start.len();
-        let dest_split = dest_start.len();
-
-        let mid_len = dest_split.abs_diff(src_split);
-
-        if src_split >= dest_split {
-            let (src_start, src_mid) = src_start.split_at_checked(dest_split).unwrap();
-            let (dest_mid, dest_end) = dest_end.split_at_mut_checked(mid_len).unwrap();
-            dest_start.clone_from_slice(src_start);
-            dest_mid.clone_from_slice(src_mid);
-            dest_end.clone_from_slice(src_end);
-        } else {
-            let (src_mid, src_end) = src_end.split_at_checked(mid_len).unwrap();
-            let (dest_start, dest_mid) = dest_start.split_at_mut_checked(src_split).unwrap();
-            dest_start.clone_from_slice(src_start);
-            dest_mid.clone_from_slice(src_mid);
-            dest_end.clone_from_slice(src_end);
-        }
-
-        Some(())
+        aligned_portions(self, slice).map(|parts| {
+            for (dest, src) in parts {
+                dest.clone_from_slice(src);
+            }
+        })
     }
 
     #[inline]
@@ -301,82 +257,49 @@ impl<'a, T> BiSliceMut<'a, T> {
 }
 
 impl<'a, T> BiSliceMut<'a, mem::MaybeUninit<T>> {
+    /// # Safety
+    ///
+    /// Same as `assume_init_mut`
     #[inline]
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn write_copy_of_slice(self, slice: BiSlice<'_, T>) -> Option<BiSliceMut<'a, T>>
-    where
-        T: Copy,
-    {
-        if self.reborrow().len() != slice.len() {
-            return None;
-        }
-
-        let (src_start, src_end) = slice.into_slices();
-        let (dest_start, dest_end) = self.into_mut_slices();
-
-        let src_split = src_start.len();
-        let dest_split = dest_start.len();
-
-        let mid_len = dest_split.abs_diff(src_split);
-
-        if src_split >= dest_split {
-            let (src_start, src_mid) = src_start.split_at_checked(dest_split).unwrap();
-            let (dest_mid, dest_end) = dest_end.split_at_mut_checked(mid_len).unwrap();
-            dest_start.write_copy_of_slice(src_start);
-            dest_mid.write_copy_of_slice(src_mid);
-            dest_end.write_copy_of_slice(src_end);
-        } else {
-            let (src_mid, src_end) = src_end.split_at_checked(mid_len).unwrap();
-            let (dest_start, dest_mid) = dest_start.split_at_mut_checked(src_split).unwrap();
-            dest_start.write_copy_of_slice(src_start);
-            dest_mid.write_copy_of_slice(src_mid);
-            dest_end.write_copy_of_slice(src_end);
-        }
-
-        Some(BiSliceMut::new(
-            unsafe { dest_start.assume_init_mut() },
-            unsafe { dest_end.assume_init_mut() },
-        ))
+    pub const unsafe fn assume_init_mut(self) -> BiSliceMut<'a, T> {
+        let start = unsafe { self.start.assume_init_mut() };
+        let end = unsafe { self.end.assume_init_mut() };
+        BiSliceMut::new(start, end)
     }
 
     #[inline]
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn write_clone_of_slice(self, slice: BiSlice<'_, T>) -> Option<BiSliceMut<'a, T>>
+    pub fn write_copy_of_slice(mut self, slice: BiSlice<'_, T>) -> Option<BiSliceMut<'a, T>>
+    where
+        T: Copy,
+    {
+        aligned_portions(self.reborrow_mut(), slice)
+            .map(|parts| {
+                for (dest, src) in parts {
+                    dest.write_copy_of_slice(src);
+                }
+            })
+            // SAFETY: we have initialized all the values
+            .map(|()| unsafe { self.assume_init_mut() })
+    }
+
+    #[inline]
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn write_clone_of_slice(mut self, slice: BiSlice<'_, T>) -> Option<BiSliceMut<'a, T>>
     where
         T: Clone,
     {
-        if self.reborrow().len() != slice.len() {
-            return None;
-        }
-
-        let (src_start, src_end) = slice.into_slices();
-        let (dest_start, dest_end) = self.into_mut_slices();
-
-        let src_split = src_start.len();
-        let dest_split = dest_start.len();
-
-        let mid_len = dest_split.abs_diff(src_split);
-
-        if src_split >= dest_split {
-            let (src_start, src_mid) = src_start.split_at_checked(dest_split).unwrap();
-            let (dest_mid, dest_end) = dest_end.split_at_mut_checked(mid_len).unwrap();
-            dest_start.write_clone_of_slice(src_start);
-            dest_mid.write_clone_of_slice(src_mid);
-            dest_end.write_clone_of_slice(src_end);
-        } else {
-            let (src_mid, src_end) = src_end.split_at_checked(mid_len).unwrap();
-            let (dest_start, dest_mid) = dest_start.split_at_mut_checked(src_split).unwrap();
-            dest_start.write_clone_of_slice(src_start);
-            dest_mid.write_clone_of_slice(src_mid);
-            dest_end.write_clone_of_slice(src_end);
-        }
-
-        Some(BiSliceMut::new(
-            unsafe { dest_start.assume_init_mut() },
-            unsafe { dest_end.assume_init_mut() },
-        ))
+        aligned_portions(self.reborrow_mut(), slice)
+            .map(|parts| {
+                for (dest, src) in parts {
+                    dest.write_clone_of_slice(src);
+                }
+            })
+            // SAFETY: we have initialized all the values
+            .map(|()| unsafe { self.assume_init_mut() })
     }
 }
 
@@ -395,5 +318,37 @@ impl<T> ops::IndexMut<usize> for BiSliceMut<'_, T> {
         self.reborrow_mut()
             .get_mut(index)
             .expect("index out of bounds")
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::io::Write for BiSliceMut<'_, u8> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let amt = data.len().min(self.reborrow().len());
+        let (a, b) = mem::take(self).split_at(amt).unwrap();
+        a.copy_from_slice(BiSlice::from_single(&data[..amt]))
+            .unwrap();
+        *self = b;
+        Ok(amt)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+        let mut nwritten = 0usize;
+        for buf in bufs {
+            nwritten = nwritten.strict_add(self.write(buf)?);
+            if self.reborrow().is_empty() {
+                break;
+            }
+        }
+
+        Ok(nwritten)
+    }
+
+    fn write_all(&mut self, data: &[u8]) -> std::io::Result<()> {
+        (self.write(data)? >= data.len()).ok_or_else(|| std::io::ErrorKind::WriteZero.into())
     }
 }
